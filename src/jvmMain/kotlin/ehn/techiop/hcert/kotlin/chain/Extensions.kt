@@ -1,6 +1,5 @@
 package ehn.techiop.hcert.kotlin.chain
 
-import java.util.*
 import org.bouncycastle.util.encoders.Base64
 
 actual fun ByteArray.asBase64() = Base64.toBase64String(this)

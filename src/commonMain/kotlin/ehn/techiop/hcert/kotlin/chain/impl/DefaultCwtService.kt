@@ -2,10 +2,13 @@ package ehn.techiop.hcert.kotlin.chain.impl
 
 import ehn.techiop.hcert.kotlin.chain.CwtService
 import ehn.techiop.hcert.kotlin.chain.Error
+import ehn.techiop.hcert.kotlin.chain.VerificationException
 import ehn.techiop.hcert.kotlin.chain.VerificationResult
 import ehn.techiop.hcert.kotlin.crypto.CwtHeaderKeys
+import ehn.techiop.hcert.kotlin.data.CborObject
 import ehn.techiop.hcert.kotlin.trust.CwtAdapter
 import ehn.techiop.hcert.kotlin.trust.CwtCreationAdapter
+import ehn.techiop.hcert.kotlin.trust.CwtHelper
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 import kotlin.time.Duration
@@ -30,56 +33,47 @@ open class DefaultCwtService constructor(
         return cwtAdapter.encode()
     }
 
-    override fun decode(input: ByteArray, verificationResult: VerificationResult): ByteArray {
+    override fun decode(input: ByteArray, verificationResult: VerificationResult): CborObject {
         try {
-            val map = CwtAdapter(input)
+            val map = CwtHelper.fromCbor(input)
 
             map.getString(CwtHeaderKeys.ISSUER.intVal)?.let {
                 verificationResult.issuer = it
             }
+
             map.getNumber(CwtHeaderKeys.ISSUED_AT.intVal)?.let {
                 val issuedAt = Instant.fromEpochSeconds(it.toLong())
                 verificationResult.issuedAt = issuedAt
                 verificationResult.certificateValidFrom?.let { certValidFrom ->
-                    if (issuedAt < certValidFrom) {
-                        throw Throwable("issuedAt<certValidFrom").also {
-                            verificationResult.error = Error.CWT_EXPIRED
-                        }
-                    }
+                    if (issuedAt < certValidFrom)
+                        throw VerificationException(Error.CWT_EXPIRED, "issuedAt<certValidFrom")
                 }
-                if (issuedAt > clock.now()) {
-                    throw Throwable("issuedAt>clock.now()").also {
-                        verificationResult.error = Error.CWT_EXPIRED
-                    }
-                }
+                if (issuedAt > clock.now())
+                    throw VerificationException(Error.CWT_EXPIRED, "issuedAt>clock.now()")
             }
+
             map.getNumber(CwtHeaderKeys.EXPIRATION.intVal)?.let {
                 val expirationTime = Instant.fromEpochSeconds(it.toLong())
                 verificationResult.expirationTime = expirationTime
                 verificationResult.certificateValidUntil?.let { certValidUntil ->
-                    if (expirationTime > certValidUntil) {
-                        throw Throwable("expirationTime>certValidUntil").also {
-                            verificationResult.error = Error.CWT_EXPIRED
-                        }
-                    }
+                    if (expirationTime > certValidUntil)
+                        throw VerificationException(Error.CWT_EXPIRED, "expirationTime>certValidUntil")
                 }
-                if (expirationTime < clock.now()) {
-                    throw Throwable("expirationTime<clock.now()").also {
-                        verificationResult.error = Error.CWT_EXPIRED
-                    }
-                }
+                if (expirationTime < clock.now())
+                    throw VerificationException(Error.CWT_EXPIRED, "expirationTime<clock.now()")
             }
 
             map.getMap(CwtHeaderKeys.HCERT.intVal)?.let { hcert ->
                 hcert.getMap(CwtHeaderKeys.EUDGC_IN_HCERT.intVal)?.let { eudgcV1 ->
-                    return eudgcV1.encoded()
+                    return eudgcV1.toCborObject()
                 }
             }
-            throw Throwable("CWT contains no HCERT or EUDGC")
+
+            throw VerificationException(Error.CBOR_DESERIALIZATION_FAILED, "CWT contains no HCERT or EUDGC")
+        } catch (e: VerificationException) {
+            throw e
         } catch (e: Throwable) {
-            throw e.also {
-                verificationResult.error = Error.CBOR_DESERIALIZATION_FAILED
-            }
+            throw VerificationException(Error.CBOR_DESERIALIZATION_FAILED, e.message, e)
         }
     }
 

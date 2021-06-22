@@ -49,11 +49,6 @@ class VerificationResult {
      * Holds the error, if any occurred
      */
     var error: Error? = null
-        get() = field
-        set(value) {
-            if (field == null)
-                field = value
-        }
 
     override fun toString(): String {
         return "VerificationResult(" +
@@ -64,7 +59,7 @@ class VerificationResult {
                 "certificateValidUntil=$certificateValidUntil, " +
                 "certificateValidContent=$certificateValidContent, " +
                 "content=$content, " +
-                "error=$error" +
+                "error=$error, " +
                 ")"
     }
 
