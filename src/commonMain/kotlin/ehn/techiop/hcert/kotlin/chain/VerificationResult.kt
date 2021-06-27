@@ -4,6 +4,7 @@ import ehn.techiop.hcert.kotlin.crypto.CertificateAdapter
 import ehn.techiop.hcert.kotlin.trust.ContentType
 import kotlinx.datetime.Instant
 import kotlinx.serialization.Serializable
+import kotlin.js.JsName
 
 @Serializable
 class VerificationResult {

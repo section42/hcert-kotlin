@@ -29,10 +29,7 @@ This Kotlin library is a [mulitplatform project](https://kotlinlang.org/docs/mul
 
 The main class for encoding and decoding HCERT data is `ehn.techiop.hcert.kotlin.chain.Chain`. For encoding, pass an instance of a `GreenCertificate` (data class conforming to the DCC schema) and get a `ChainResult`. That object will contain all revelant intermediate results as well as the final result (`step5Prefixed`). This final result can be passed to a `DefaultTwoDimCodeService` that will encode it as a 2D QR Code.
 
-The usage of interfaces for all services (CBOR, CWT, COSE, ZLib, Context) in the chain may seem over-engineered at first, but it allows us to create wrongly encoded results, by passing faulty implementations of the service. Those services reside in the namespace `ehn.techiop.hcert.kotlin.chain.faults` and should, obviously, not be used for production code.
-
-The actual, correct, implementations of the service interfaces reside in the namespace `ehn.techiop.hcert.kotlin.chain.impl`. These "default" implementations will be used when the chain is constructed using `DefaultChain.buildCreationChain()` or `DefaultChain.buildVerificationChain()`.
-
+Correct implementations of the service interfaces reside in `ehn.techiop.hcert.kotlin.chain.impl`. These "default" implementations will be used when the chain is constructed using `DefaultChain.buildCreationChain()` or `DefaultChain.buildVerificationChain()`.
 
 Example for creation services:
 
@@ -94,6 +91,12 @@ Chain chain = DefaultChain.buildVerificationChain(repository);
 
 // Continue as in the example above ..
 ```
+
+### Faulty Implementations
+
+The usage of interfaces for all services (CBOR, CWT, COSE, ZLib, Context) in the chain may seem over-engineered at first, but it allows us to create wrongly encoded results, by passing faulty implementations of the service. Those services reside in a separate artifact named `ehn.techiop.hcert:hcert-kotlin-jvmdatagen` in the namespace `ehn.techiop.hcert.kotlin.chain.faults` and should, obviously, not be used for production code.
+
+Sample data objects are provided in `SampleData`, with special thanks to Christian Baumann.
 
 ## Usage (JS)
 
@@ -208,6 +211,78 @@ let input = JSON.stringify({"ver": "1.2.1", "nam": { ... }});
 // Continue with example above with generator.encode()
 ```
 
+An alternative to calling `verfiy(qr)` is to call `verifyDataClass(qr)` which returns the `greenCertificate` as an JS object, like this:
+
+```JSON
+{
+  "schemaVersion": "1.0.0",
+  "subject": {
+    "familyName": "Musterfrau-Gößinger",
+    "familyNameTransliterated": "MUSTERFRAU<GOESSINGER",
+    "givenName": "Gabriele",
+    "givenNameTransliterated": "GABRIELE"
+  },
+  "dateOfBirthString": "1998-02-26",
+  "vaccinations": [
+    {
+      "target": {
+        "key": "840539006",
+        "valueSetEntry": {
+          "display": "COVID-19",
+          "lang": "en",
+          "active": true,
+          "system": "http://snomed.info/sct",
+          "version": "http://snomed.info/sct/900000000000207008/version/20210131",
+          "valueSetId": null
+        }
+      },
+      "vaccine": {
+        "key": "1119305005",
+        "valueSetEntry": {
+          "display": "SARS-CoV-2 antigen vaccine",
+          "lang": "en",
+          "active": true,
+          "system": "http://snomed.info/sct",
+          "version": "http://snomed.info/sct/900000000000207008/version/20210131",
+          "valueSetId": null
+        }
+      },
+      "medicinalProduct": {
+        "key": "EU/1/20/1528",
+        "valueSetEntry": {
+          "display": "Comirnaty",
+          "lang": "en",
+          "active": true,
+          "system": "https://ec.europa.eu/health/documents/community-register/html/",
+          "version": "",
+          "valueSetId": null
+        }
+      },
+      "authorizationHolder": {
+        "key": "ORG-100030215",
+        "valueSetEntry": {
+          "display": "Biontech Manufacturing GmbH",
+          "lang": "en",
+          "active": true,
+          "system": "https://spor.ema.europa.eu/v1/organisations",
+          "version": "",
+          "valueSetId": "vaccines-covid-19-auth-holders"
+        }
+      },
+      "doseNumber": 1,
+      "doseTotalNumber": 2,
+      "date": "2021-02-18T00:00:00.000Z",
+      "country": "AT",
+      "certificateIssuer": "BMSGPK Austria",
+      "certificateIdentifier": "urn:uvci:01:AT:10807843F94AEE0EE5093FBC254BD813P"
+    }
+  ],
+  "recoveryStatements": null,
+  "tests": null,
+  "dateOfBirth": "1998-02-26T00:00:00.000Z"
+}
+```
+
 ## Errors
 
 The field `error` in the resulting structure (`DecodeResult`) may contain the error code. The list of possible errors is the same as for [ValidationCore](https://github.com/ehn-dcc-development/ValidationCore):
@@ -268,13 +343,13 @@ byte[] trustListSignature = trustListService.encodeSignature(trustListContent);
 
 ## Data Classes
 
-Sample data objects are provided in `SampleData`, with special thanks to Christian Baumann.
-
 Classes in `ehn.techiop.hcert.kotlin.data` provide Kotlin data classes that conform to the JSON schema. They can be de-/serialized with [Kotlin Serialization](https://github.com/Kotlin/kotlinx.serialization), i.e. `Cbor.encodeToByteArray()` or `Cbor.decodeFromByteArray<GreenCertificate>()`.
 
 These classes also use `ValueSetEntry` objects, that are loaded from the valuesets of the dgc-schema. These provide additional information, e.g. for the key "EU/1/20/1528" to map to the vaccine "Comirnaty".
 
 This implementation is on purpose lenient when parsing HCERT data, since there may be some production data out there, that includes timestamps in date objects, or whitespaces in keys for value sets.
+
+For JS, you can call `verifyDataClass(qr)` (istead of `verify(qr)`) to get an instance of a monkey-patched `GreenCertificate`. This class is essentially the same as `GreenCertificate` for the JVM target, but holds JS `Date` objects instead of the JVM types for dates and instants. In contrast to the simple call to `verify(qr)`, you'll get a `valueSetEntry` (if one is found) and descriptive property names.
 
 ## Configuration
 
@@ -302,6 +377,10 @@ ChainResult result = chain.encode(input);
 
 Implementers may load values for constructor parameters from a configuration file, e.g. with [Spring Boot's configuration properties](https://docs.spring.io/spring-boot/docs/current/reference/html/spring-boot-features.html#boot-features-external-config).
 
+Configurability also holds true for logging, which is based on [Napier](https://github.com/AAkira/Napier) and is shipped with a JS+JVM basic debug logger (see [Enabling logging](src/commonTest/kotlin/ehn/techiop/hcert/kotlin/000InitTestContext.kt)).
+This should probably be configured differently in production.
+On other platforms, Napier's respective default platform-specific logger should be used.
+
 ## Publishing
 
 To publish this package to GitHub, create a personal access token (read <https://docs.github.com/en/packages/guides/configuring-gradle-for-use-with-github-packages>), and add `gpr.user` and `gpr.key` in your `~/.gradle/gradle.properties` and run `./gradlew publish`
@@ -325,8 +404,10 @@ If you are planning to use this library, we'll suggest to fork it (internally), 
 
 ## Changelog
 
-Next release:
- - tbd
+Version 1.2.0:
+ - Split faulty implementations, sample data, to separate artifact: `ehn.techiop.hcert:hcert-kotlin-jvmdatagen`
+ - Add option to get a data class with "nice" names when validating in JS (equivalent to JVM)
+ - API change: GreenCertificate now uses arrays for test/vaccination/recovery
 
 Version 1.1.0:
  - Try to parse as many dates and datetimes as possible
@@ -374,6 +455,7 @@ This library uses the following dependencies:
  - [Kotlin](https://github.com/JetBrains/kotlin), under the Apache-2.0 License
  - [Kotlinx Serialization](https://github.com/Kotlin/kotlinx.serialization), under the Apache-2.0 License
  - [Kotlinx Datetime](https://github.com/Kotlin/kotlinx-datetime), under the Apache-2.0 License
+ - [Napier](https://github.com/AAkira/Napier), under the Apache-2.0 License
  - [Kotest](https://github.com/kotest/kotest), under the Apache-2.0 License
 
 For the JVM target:

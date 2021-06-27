@@ -1,21 +1,7 @@
-import ehn.techiop.hcert.kotlin.chain.CertificateRepository
-import ehn.techiop.hcert.kotlin.chain.Chain
-import ehn.techiop.hcert.kotlin.chain.CryptoService
-import ehn.techiop.hcert.kotlin.chain.DecodeJsResult
-import ehn.techiop.hcert.kotlin.chain.DefaultChain
-import ehn.techiop.hcert.kotlin.chain.Error
+import ehn.techiop.hcert.kotlin.chain.*
 import ehn.techiop.hcert.kotlin.chain.NullableTryCatch.catch
 import ehn.techiop.hcert.kotlin.chain.NullableTryCatch.jsTry
-import ehn.techiop.hcert.kotlin.chain.SampleData
-import ehn.techiop.hcert.kotlin.chain.VerificationException
-import ehn.techiop.hcert.kotlin.chain.asBase64
-import ehn.techiop.hcert.kotlin.chain.from
-import ehn.techiop.hcert.kotlin.chain.impl.DefaultTwoDimCodeService
-import ehn.techiop.hcert.kotlin.chain.impl.FileBasedCryptoService
-import ehn.techiop.hcert.kotlin.chain.impl.PrefilledCertificateRepository
-import ehn.techiop.hcert.kotlin.chain.impl.RandomEcKeyCryptoService
-import ehn.techiop.hcert.kotlin.chain.impl.TrustListCertificateRepository
-import ehn.techiop.hcert.kotlin.chain.toByteArray
+import ehn.techiop.hcert.kotlin.chain.impl.*
 import io.github.aakira.napier.Napier
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -61,12 +47,24 @@ class Verifier {
         }
     }
 
+    /**
+     * Returns a serialization of [DecodeResultJs]
+     */
     fun verify(qrContent: String): jsJson {
-        val decodeResult = DecodeJsResult(chain.decode(qrContent))
-        // we can't return DecodeJsResult directly, because that would lead to
-        // ugly serialization in JS, because we can't annotate Platform Types with
-        // @JSExport, and neither @Serializable types
-        return JSON.parse(Json { encodeDefaults = true }.encodeToString(decodeResult))
+        val decodeResult = DecodeResultJs(chain.decode(qrContent))
+        return JSON.parse(Json {
+            encodeDefaults = true
+        }.encodeToString(decodeResult.also { it.greenCertificate?.kotlinify() }))
+    }
+
+    /**
+     * We'll make sure, that [DecodeResultJs] contains only
+     * types that export nicely to JavaScript, so it's okay
+     * to suppress the warning.ü0ü0
+     */
+    @Suppress("NON_EXPORTABLE_TYPE")
+    fun verifyDataClass(qrContent: String): DecodeResultJs {
+        return DecodeResultJs(chain.decode(qrContent))
     }
 
 }
@@ -110,27 +108,29 @@ class Generator {
  */
 fun main() {
     if (false) {
-        val directVerifier = Verifier("foo")
+        val directVerifier = Verifier("bar")
         directVerifier.verify("bar")
+        directVerifier.verifyDataClass("bar")
         val trustListVerifier = Verifier(
-            "foo",
+            "bar",
             ArrayBuffer.from("content".encodeToByteArray()),
             ArrayBuffer.from("signature".encodeToByteArray())
         )
         trustListVerifier.verify("bar")
+        trustListVerifier.verifyDataClass("bar")
         trustListVerifier.updateTrustList(
-            "foo",
+            "bar",
             ArrayBuffer.from("content".encodeToByteArray()),
             ArrayBuffer.from("signature".encodeToByteArray())
         )
 
         val generatorEcRandom = Generator(256)
-        generatorEcRandom.encode(SampleData.vaccination)
-        generatorEcRandom.encodeToQrCode(SampleData.vaccination, 3, 2)
+        generatorEcRandom.encode("bar")
+        generatorEcRandom.encodeToQrCode("bar", 3, 2)
 
-        val generatorFixed = Generator("foo", "bar")
-        generatorFixed.encode(SampleData.recovery)
-        generatorFixed.encodeToQrCode(SampleData.recovery, 2, 1)
+        val generatorFixed = Generator("bar", "bar")
+        generatorFixed.encode("bar")
+        generatorFixed.encodeToQrCode("bar", 2, 1)
     }
     console.info("DCC Chain Loaded")
 }
