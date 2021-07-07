@@ -4,7 +4,9 @@ import Buffer
 import ehn.techiop.hcert.kotlin.chain.*
 import ehn.techiop.hcert.kotlin.chain.NullableTryCatch.catch
 import ehn.techiop.hcert.kotlin.chain.NullableTryCatch.jsTry
+import ehn.techiop.hcert.kotlin.chain.impl.CborHelper
 import ehn.techiop.hcert.kotlin.crypto.Cose
+import io.github.aakira.napier.Napier
 import org.khronos.webgl.Uint8Array
 
 actual class CoseAdapter actual constructor(private val input: ByteArray) {
@@ -14,7 +16,6 @@ actual class CoseAdapter actual constructor(private val input: ByteArray) {
     private val parsed = parse(input)
     val cborJson = parsed.cborJson
     val cose = parsed.cose
-
     val coseValue = parsed.coseValue
     val protectedHeader = parsed.protectedHeader
     val protectedHeaderCbor = parsed.protectedHeaderCbor
@@ -23,6 +24,8 @@ actual class CoseAdapter actual constructor(private val input: ByteArray) {
     val signature = parsed.signature
 
     companion object {
+        private val debugTag = CoseAdapter::class.simpleName + hashCode().toString()
+
         private data class InitHelper(
             val cborJson: Array<Any>,
             val cose: Cbor.Tagged,
@@ -36,13 +39,23 @@ actual class CoseAdapter actual constructor(private val input: ByteArray) {
 
         private fun parse(input: ByteArray) =
             jsTry {
-                val cborJson = Cbor.Decoder.decodeAllSync(Buffer(augmentedInput(input).toUint8Array()))
+                Napier.d(tag = debugTag, message = "CBOR-decoding input")
+                val cborJson = CborHelper.decodeAll(augmentedInput(input))
+                Napier.v(tag = debugTag, message = "CBOR-decoded input is\n${JSON.stringify(cborJson, null, 2)}")
+                Napier.d(tag = debugTag, message = "extracting tagged element")
                 val cose = cborJson[0] as Cbor.Tagged
 
                 @Suppress("UNCHECKED_CAST")
                 val coseValue = cose.value as Array<Buffer>
                 val protectedHeader = coseValue[0]
-                val protectedHeaderCbor = Cbor.Decoder.decodeAllSync(protectedHeader)[0].asDynamic()
+
+                Napier.d(tag = debugTag, message = "decoding protected header")
+                val protectedHeaderCbor = CborHelper.decodeFirst(protectedHeader)
+                Napier.d(
+                    tag = debugTag,
+                    message = "decoded protected header is\n${JSON.stringify(protectedHeaderCbor, null, 2)}"
+                )
+                Napier.d(tag = debugTag, message = "extracting unprotected header")
                 val unprotectedHeader = coseValue[1].asDynamic()
                 val content = coseValue[2]
                 val signature = coseValue[3]
@@ -96,31 +109,24 @@ actual class CoseAdapter actual constructor(private val input: ByteArray) {
     actual fun getProtectedAttributeInt(key: Int) =
         protectedHeaderCbor?.get(key) as Int?
 
-    actual fun validate(kid: ByteArray, repository: CertificateRepository): Boolean {
-        repository.loadTrustedCertificates(kid, VerificationResult()).forEach {
-            val result = jsTry {
-                Cose.verifySync(input, it.publicKey) !== undefined
-            }.catch {
-                false
-            }
-            if (result) return true // else try next
-        }
-        return false
-    }
+    actual fun validate(kid: ByteArray, repository: CertificateRepository) =
+        validate(kid, repository, VerificationResult())
 
     actual fun validate(
         kid: ByteArray,
         repository: CertificateRepository,
         verificationResult: VerificationResult
     ): Boolean {
-        repository.loadTrustedCertificates(kid, verificationResult).forEach { trustedCert ->
-            verificationResult.setCertificateData(trustedCert)
+        repository.loadTrustedCertificates(kid, verificationResult).forEach {
             val result = jsTry {
-                Cose.verifySync(augmentedInput(input), trustedCert.publicKey) !== undefined
+                Cose.verifySync(augmentedInput(input), it.publicKey) !== undefined
             }.catch {
                 false
             }
-            if (result) return true // else try next
+            if (result) {
+                verificationResult.setCertificateData(it)
+                return true
+            } // else try next
         }
         return false
     }
@@ -130,13 +136,16 @@ actual class CoseAdapter actual constructor(private val input: ByteArray) {
         cryptoService: CryptoService,
         verificationResult: VerificationResult
     ): Boolean {
-        verificationResult.setCertificateData(cryptoService.getCertificate())
         val pubKey = cryptoService.getCborVerificationKey(kid, verificationResult)
-        return jsTry {
+        val result = jsTry {
             Cose.verifySync(augmentedInput(input), pubKey) !== undefined
         }.catch {
             false
         }
+        if (result) {
+            verificationResult.setCertificateData(cryptoService.getCertificate())
+        }
+        return result
     }
 
     actual fun getContent() = content.toByteArray()

@@ -1,10 +1,10 @@
 package ehn.techiop.hcert.kotlin.chain
 
-import ehn.techiop.hcert.kotlin.chain.DecodeResultJs.Companion.replaceDateWithTimestap
-import ehn.techiop.hcert.kotlin.chain.DecodeResultJs.Companion.replaceTimestampWithDate
+import ehn.techiop.hcert.kotlin.chain.DecodeResultJs.Companion.replaceDatesWithJsTypes
 import ehn.techiop.hcert.kotlin.data.GreenCertificate
-import kotlinx.datetime.Instant
-import kotlinx.datetime.LocalDate
+import ehn.techiop.hcert.kotlin.data.RecoveryStatement
+import ehn.techiop.hcert.kotlin.data.Test
+import ehn.techiop.hcert.kotlin.data.Vaccination
 import kotlinx.serialization.Serializable
 import kotlin.js.Date
 
@@ -26,71 +26,51 @@ data class DecodeResultJs(
         extResult.verificationResult.error == null,
         extResult.verificationResult.error?.name,
         VerificationResultJs(extResult.verificationResult),
-        extResult.chainDecodeResult.eudgc?.apply { jsify() },
+        extResult.chainDecodeResult.eudgc?.apply { replaceDatesWithJsTypes() },
     )
 
     internal companion object {
+
         private fun Any.toJsDate() = Date(toString())
 
-        private fun Date.toInstant() = Instant.parse(toISOString())
-
-        private fun Date.toLocalDate() = LocalDate.parse(toISOString().substringBefore("T"))
-
-        //we don't need custom deserializers, since the source is an object, which already invoked them when parsing from the cbor source
-        internal fun Any.replaceTimestampWithDate(propertyName: String) {
+        /**
+         * we don't need custom deserializers, since the source is an object,
+         * which already invoked them when parsing from the cbor source
+         */
+        @Suppress("USELESS_CAST")
+        internal fun Any.replaceDatesWithJsTypes(propertyName: String) {
             val asDynamic = asDynamic()
-
-            @Suppress("USELESS_CAST")
             val timestamp = asDynamic[propertyName] as? Any? //not useless at all!
             (timestamp)?.let { asDynamic[propertyName] = it.toJsDate() }
         }
 
-        internal fun Any.replaceDateWithTimestap(propertyName: String, isInstant: Boolean = false) {
-            val asDynamic = asDynamic()
-            val timestamp = asDynamic[propertyName] as? Date?
-            (timestamp)?.let { asDynamic[propertyName] = if (isInstant) it.toInstant() else it.toLocalDate() }
-        }
     }
 }
 
-fun GreenCertificate.jsify() {
-    //replace DoB with plain JS Object
+private fun Test.replaceDatesWithJsTypes() {
+    replaceDatesWithJsTypes("dateTimeResult")
+    replaceDatesWithJsTypes("dateTimeSample")
+}
+
+private fun RecoveryStatement.replaceDatesWithJsTypes() {
+    replaceDatesWithJsTypes("certificateValidFrom")
+    replaceDatesWithJsTypes("certificateValidUntil")
+    replaceDatesWithJsTypes("dateOfFirstPositiveTestResult")
+}
+
+private fun Vaccination.replaceDatesWithJsTypes() {
+    replaceDatesWithJsTypes("date")
+}
+
+private fun GreenCertificate.replaceDatesWithJsTypes() {
     asDynamic()["dateOfBirth"] = try {
         Date(dateOfBirthString.substringBefore("T"))
     } catch (e: Throwable) {
         null
     }
-
-    //now replace instants
-    tests?.filterNotNull()?.forEach {
-        it.replaceTimestampWithDate("dateTimeResult")
-        it.replaceTimestampWithDate("dateTimeSample")
-    }
-    recoveryStatements?.filterNotNull()?.forEach {
-        it.replaceTimestampWithDate("certificateValidFrom")
-        it.replaceTimestampWithDate("certificateValidUntil")
-        it.replaceTimestampWithDate("dateOfFirstPositiveTestResult")
-    }
-    vaccinations?.filterNotNull()?.forEach {
-        it.replaceTimestampWithDate("date")
-    }
+    tests?.filterNotNull()?.forEach { it.replaceDatesWithJsTypes() }
+    recoveryStatements?.filterNotNull()?.forEach { it.replaceDatesWithJsTypes() }
+    vaccinations?.filterNotNull()?.forEach { it.replaceDatesWithJsTypes() }
 }
 
-fun GreenCertificate.kotlinify() {
-    //replace DoB with plain JS Object
-    replaceDateWithTimestap("dateOfBirth")
 
-    //now replace instants
-    tests?.filterNotNull()?.forEach {
-        it.replaceDateWithTimestap("dateTimeResult", isInstant = true)
-        it.replaceDateWithTimestap("dateTimeSample", isInstant = true)
-    }
-    recoveryStatements?.filterNotNull()?.forEach {
-        it.replaceDateWithTimestap("certificateValidFrom")
-        it.replaceDateWithTimestap("certificateValidUntil")
-        it.replaceDateWithTimestap("dateOfFirstPositiveTestResult")
-    }
-    vaccinations?.filterNotNull()?.forEach {
-        it.replaceDateWithTimestap("date")
-    }
-}
