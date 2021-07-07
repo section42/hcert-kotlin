@@ -13,7 +13,7 @@ All services are implemented according to <https://github.com/ehn-digital-green-
 
 The schemata for data classes are imported from <https://github.com/ehn-digital-green-development/ehn-dgc-schema>, up to Version 1.3.0, from 2021-06-11.
 
-The resources for interop testing are imported as a git submodule from <https://github.com/eu-digital-green-certificates/dgc-testdata> into `src/commonTest/resources/dgc-testdata`. Please clone this repository with `git clone --recursive` or run `git submodule init && git submodule update` afterwards.
+Several other git repositories are included as submodules. Please clone this repository with `git clone --recursive` or run `git submodule init && git submodule update --recursive` afterwards.
 
 This Kotlin library is a [mulitplatform project](https://kotlinlang.org/docs/multiplatform.html), with targets for JVM and JavaScript.
 
@@ -27,12 +27,9 @@ This Kotlin library is a [mulitplatform project](https://kotlinlang.org/docs/mul
 
 ## Usage (JVM)
 
-`ehn.techiop.hcert.kotlin.chain.Chain` is the main class for encoding and decoding HCERT data. For encoding, pass an instance of a `GreenCertificate` (data class conforming to the JSON schema) and get a `ChainResult`. That object will contain all revelant intermediate results as well as the final result (`step5Prefixed`). This final result can be passed to a `DefaultTwoDimCodeService` that will encode it as a 2D QR Code.
+The main class for encoding and decoding HCERT data is `ehn.techiop.hcert.kotlin.chain.Chain`. For encoding, pass an instance of a `GreenCertificate` (data class conforming to the DCC schema) and get a `ChainResult`. That object will contain all revelant intermediate results as well as the final result (`step5Prefixed`). This final result can be passed to a `DefaultTwoDimCodeService` that will encode it as a 2D QR Code.
 
-The usage of interfaces for all services (CBOR, CWT, COSE, ZLib, Context) in the chain may seem over-engineered at first, but it allows us to create wrongly encoded results, by passing faulty implementations of the service. Those services reside in the namespace `ehn.techiop.hcert.kotlin.chain.faults` and should, obviously, not be used for production code.
-
-The actual, correct, implementations of the service interfaces reside in `ehn.techiop.hcert.kotlin.chain.impl`. These "default" implementations will be used when the chain is constructed using `DefaultChain.buildCreationChain()` or `DefaultChain.buildVerificationChain()`.
-
+Correct implementations of the service interfaces reside in `ehn.techiop.hcert.kotlin.chain.impl`. These "default" implementations will be used when the chain is constructed using `DefaultChain.buildCreationChain()` or `DefaultChain.buildVerificationChain()`.
 
 Example for creation services:
 
@@ -47,7 +44,7 @@ Chain chain = DefaultChain.buildCreationChain(cryptoService);
 String json = "{ \"sub\": { \"gn\": \"Gabriele\", ...";
 String input = Json.decodeFromString<GreenCertificate>(json);
 
-// Apply all encoding steps from the Chain: CBOR, CWT, COSE, ZLIB, Base45, Context
+// Apply all encoding steps from the Chain
 ChainResult result = chain.encode(input);
 
 // Optionally encode it as a QR-Code with 350 pixel in width and height
@@ -62,21 +59,48 @@ String html = "<img src=\"data:image/png;base64," + encodedBase64QrCode + "\" />
 Example for the verification side, i.e. in apps:
 
 ```Java
-CertificateRepository repository = new PrefilledCertificateRepository("-----BEGIN CERTIFICATE-----\nMIICsjCCAZq...");
+// Load the certificate from somewhere ...
+String certificatePem = "-----BEGIN CERTIFICATE-----\nMIICsjCCAZq...";
+CertificateRepository repository = new PrefilledCertificateRepository(certificatePem);
 Chain chain = DefaultChain.buildVerificationChain(repository);
+
 // Scan the QR code from somewhere ...
 String input = "HC1:NCFC:MVIMAP2SQ20MU...";
 
 DecodeResult result = chain.decode(input);
-VerificationResult verificationResult = result.getVerificationResult(); // contains metaInformation
-boolean isValid = verificationResult.getError() == null; // true or false
-Error error = verificationResult.getError(); // may be null, see list below
-GreenCertificate greenCertificate = result.getChainDecodeResult().getEudgc(); // may be null
+// Read metaInformation like expirationTime, issuedAt, issuer
+VerificationResult verificationResult = result.getVerificationResult()
+boolean isValid = verificationResult.getError() == null;
+// See list below for possible Errors, may be null
+Error error = verificationResult.getError();
+// Result data may be null
+GreenCertificate greenCertificate = result.getChainDecodeResult().getEudgc();
 ```
+
+You may also load a trust list from a server, that contains several trusted certificates:
+```Java
+// PEM-encoded signer certificate of the trust list
+String trustListAnchor = "-----BEGIN CERTIFICATE-----\nMIICsjCCAZq...";
+CertificateRepository trustAnchor = new PrefilledCertificateRepository(trustListAnchor);
+// Download trust list content, binary, e.g. from https://dgc.a-sit.at/ehn/cert/listv2
+byte[] trustListContent = new byte[0];
+// Download trust list signature, binary, e.g. from https://dgc.a-sit.at/ehn/cert/sigv2
+byte[] trustListSignature = new byte[0];
+CertificateRepository repository = new TrustListCertificateRepository(trustListSignature, trustListContent, trustAnchor);
+Chain chain = DefaultChain.buildVerificationChain(repository);
+
+// Continue as in the example above ..
+```
+
+### Faulty Implementations
+
+The usage of interfaces for all services (CBOR, CWT, COSE, ZLib, Context) in the chain may seem over-engineered at first, but it allows us to create wrongly encoded results, by passing faulty implementations of the service. Those services reside in a separate artifact named `ehn.techiop.hcert:hcert-kotlin-jvmdatagen` in the namespace `ehn.techiop.hcert.kotlin.chain.faults` and should, obviously, not be used for production code.
+
+Sample data objects are provided in `SampleData`, with special thanks to Christian Baumann.
 
 ## Usage (JS)
 
-The build result of this library for JS is a module in UMD format, under `build/distributions/hcert-kotlin.js`. This script runs in a web browser environment and can be used in the following way (see [demo.html](demo.html)).
+The build result of this library for JS is a module in UMD format, located under `build/distributions/hcert-kotlin.js`. This script runs in a web browser environment and can be used in the following way (see [demo.html](demo.html)).
 
 Build the module either for development or production:
 ```
@@ -87,41 +111,50 @@ Build the module either for development or production:
 To verify a single QR code content:
 
 ```JavaScript
-let qr = "HC1:NCFC:MVIMAP2SQ20MU..."; // scan from somewhere
-let pemCert = "-----BEGIN CERTIFICATE-----\nMIICsjCCAZq..."; // PEM encoded DSC
-let verifier = new hcert.VerifierDirect([pemCert]); // would also accept more than one DSC
+// PEM-encoded DSC
+let pemCert = "-----BEGIN CERTIFICATE-----\nMIICsjCCAZq...";
+// Would also accept more than one DSC
+let verifier = new hcert.VerifierDirect([pemCert]);
 
+// Scan the QR code from somewhere ...
+let qr = "HC1:NCFC:MVIMAP2SQ20MU...";
 let result = verifier.verify(qr);
-let isValid = result.isValid; // true or false
-let metaInformation = result.metaInformation // see below
-let error = result.error; // may be null, or contain an error, see below
-let greenCertificate = result.greenCertificate; // may be null, or contain the decoded HCERT
 
-console.info(result);
+let isValid = result.isValid;
+// Read metaInformation like expirationTime, issuedAt, issuer
+let metaInformation = result.metaInformation;
+// See list below for possible Errors, may be null
+let error = result.error;
+// Result data may be null, contains decoded HCERT
+let greenCertificate = result.greenCertificate;
 ```
 
-An alternative way of initializing the Verifier is by loading a TrustList, containing several DSC:
+An alternative way of initializing the `Verifier` is by loading a trust list:
 
 ```JavaScript
-let qr = "HC1:NCFC:MVIMAP2SQ20MU..."; // scan from somewhere
-let pemCert = "-----BEGIN CERTIFICATE-----\nMIICsjCCAZq..."; // PEM encoded signer certificate from the TrustList
-let trustListContent = new ArrayBuffer(8); // download it, e.g. from https://dgc.a-sit.at/ehn/cert/listv2
-let trustListSignature = new ArrayBuffer(8); // download it, e.g. from https://dgc.a-sit.at/ehn/cert/sigv2
-let verifier = new hcert.VerifierTrustList(pemCert, trustListContent, trustListSignature);
+// PEM-encoded signer certificate of the trust list
+let trustListAnchor = "-----BEGIN CERTIFICATE-----\nMIICsjCCAZq...";
+// Download trust list content, binary, e.g. from https://dgc.a-sit.at/ehn/cert/listv2
+let trustListContent = new ArrayBuffer(8);
+// Download trust list signature, e.g. from https://dgc.a-sit.at/ehn/cert/sigv2
+let trustListSignature = new ArrayBuffer(8);
 
-let result = verifier.verify(qr);
-// same as above ...
+let verifier = new hcert.VerifierTrustList(trustListAnchor, trustListContent, trustListSignature);
+// Continue with example above with verifier.verify()
 ```
 
 If you want to save the instance of `verifier` across several decodings, you can update the TrustList afterwards, too:
 
 ```JavaScript
-let pemCert = "-----BEGIN CERTIFICATE-----\nMIICsjCCAZq..."; // PEM encoded signer certificate from the TrustList
-let trustListContent = new ArrayBuffer(8); // download it, e.g. from https://dgc.a-sit.at/ehn/cert/listv2
-let trustListSignature = new ArrayBuffer(8); // download it, e.g. from https://dgc.a-sit.at/ehn/cert/sigv2
-verifier.updateTrustList(pemCert, trustListContent, trustListSignature);
+// PEM-encoded signer certificate of the trust list
+let trustListAnchor = "-----BEGIN CERTIFICATE-----\nMIICsjCCAZq...";
+// Download trust list content, binary, e.g. from https://dgc.a-sit.at/ehn/cert/listv2
+let trustListContent = new ArrayBuffer(8);
+// Download trust list signature, e.g. from https://dgc.a-sit.at/ehn/cert/sigv2
+let trustListSignature = new ArrayBuffer(8);
+verifier.updateTrustList(trustListAnchor, trustListContent, trustListSignature);
 
-// go on with verifier.verify("...");
+// Continue with example above with verifier.verify();
 ```
 
 The meta information contains extracted data from the QR code contents, e.g.:
@@ -138,6 +171,7 @@ The meta information contains extracted data from the QR code contents, e.g.:
     "VACCINATION",
     "RECOVERY"
   ],
+  "certificateSubjectCountry": "AT",
   "content": [
     "VACCINATION"
   ],
@@ -145,7 +179,114 @@ The meta information contains extracted data from the QR code contents, e.g.:
 }
 ```
 
-The resulting `error` may be one of the following (the list is identical to ValidationCore for Swift, therefore there may be some unused entries):
+Encoding of HCERT data, i.e. generating the input for an QR Code, as well as the QR Code picture:
+```JavaScript
+// Create a new, random EC key with 256 bits key size, i.e. on P-256
+let generator = new hcert.GeneratorEcRandom(256);
+// Provide valid HCERT data
+let input = JSON.stringify({"ver": "1.2.1", "nam": { ... }});
+
+// Get a result with all intermediate steps
+let result = generator.encode(input);
+
+// Print the contents of the QR code
+console.info(result.step5Prefixed);
+
+// Alternative: Get a data URL of the encoded QR code picture, e.g. "data:image/gif;base64,AAA..."
+let moduleSize = 4;
+let marginSize = 2;
+let qrCode = generator.encodeToQrCode(input, moduleSize, marginSize);
+```
+
+You may also load a fixed key pair with certificate:
+```JavaScript
+// PEM-encoded private key info, i.e. PKCS#8
+let pemKey = "-----BEGIN PRIVATE KEY-----\nME0CAQAwE...";
+// PEM-encoded certificate
+let pemCert = "-----BEGIN CERTIFICATE-----\nMIICsjCCAZq...";
+// Load the private key and certificate
+let generator = new hcert.GeneratorFixed(pemKey, pemCert);
+// Provide valid HCERT data
+let input = JSON.stringify({"ver": "1.2.1", "nam": { ... }});
+
+// Continue with example above with generator.encode()
+```
+
+An alternative to calling `verfiy(qr)` is to call `verifyDataClass(qr)` which returns the `greenCertificate` as an JS object, like this:
+
+```JSON
+{
+  "schemaVersion": "1.0.0",
+  "subject": {
+    "familyName": "Musterfrau-Gößinger",
+    "familyNameTransliterated": "MUSTERFRAU<GOESSINGER",
+    "givenName": "Gabriele",
+    "givenNameTransliterated": "GABRIELE"
+  },
+  "dateOfBirthString": "1998-02-26",
+  "vaccinations": [
+    {
+      "target": {
+        "key": "840539006",
+        "valueSetEntry": {
+          "display": "COVID-19",
+          "lang": "en",
+          "active": true,
+          "system": "http://snomed.info/sct",
+          "version": "http://snomed.info/sct/900000000000207008/version/20210131",
+          "valueSetId": null
+        }
+      },
+      "vaccine": {
+        "key": "1119305005",
+        "valueSetEntry": {
+          "display": "SARS-CoV-2 antigen vaccine",
+          "lang": "en",
+          "active": true,
+          "system": "http://snomed.info/sct",
+          "version": "http://snomed.info/sct/900000000000207008/version/20210131",
+          "valueSetId": null
+        }
+      },
+      "medicinalProduct": {
+        "key": "EU/1/20/1528",
+        "valueSetEntry": {
+          "display": "Comirnaty",
+          "lang": "en",
+          "active": true,
+          "system": "https://ec.europa.eu/health/documents/community-register/html/",
+          "version": "",
+          "valueSetId": null
+        }
+      },
+      "authorizationHolder": {
+        "key": "ORG-100030215",
+        "valueSetEntry": {
+          "display": "Biontech Manufacturing GmbH",
+          "lang": "en",
+          "active": true,
+          "system": "https://spor.ema.europa.eu/v1/organisations",
+          "version": "",
+          "valueSetId": "vaccines-covid-19-auth-holders"
+        }
+      },
+      "doseNumber": 1,
+      "doseTotalNumber": 2,
+      "date": "2021-02-18T00:00:00.000Z",
+      "country": "AT",
+      "certificateIssuer": "BMSGPK Austria",
+      "certificateIdentifier": "urn:uvci:01:AT:10807843F94AEE0EE5093FBC254BD813P"
+    }
+  ],
+  "recoveryStatements": null,
+  "tests": null,
+  "dateOfBirth": "1998-02-26T00:00:00.000Z"
+}
+```
+
+## Errors
+
+The field `error` in the resulting structure (`DecodeResult`) may contain the error code. The list of possible errors is the same as for [ValidationCore](https://github.com/ehn-dcc-development/ValidationCore):
  - `GENERAL_ERROR`:
  - `INVALID_SCHEME_PREFIX`: The prefix does not conform to the expected one, e.g. `HC1:`
  - `DECOMPRESSION_FAILED`: Error in decompressing the input
@@ -157,7 +298,10 @@ The resulting `error` may be one of the following (the list is identical to Vali
  - `QR_CODE_ERROR`: not used
  - `CERTIFICATE_QUERY_FAILED`: not used
  - `USER_CANCELLED`: not used
- - `TRUST_SERVICE_ERROR`: not used
+ - `TRUST_SERVICE_ERROR`: General error when loading Trust List
+ - `TRUST_LIST_EXPIRED`: Trust List has expired
+ - `TRUST_LIST_NOT_YET_VALID`: Trust List is not yet valid
+ - `TRUST_LIST_SIGNATURE_INVALID`: Signature on trust list is not valid
  - `KEY_NOT_IN_TRUST_LIST`: Certificate with `KID` not found
  - `PUBLIC_KEY_EXPIRED`: Certificate used to sign the COSE structure has expired
  - `UNSUITABLE_PUBLIC_KEY_TYPE`: Certificate has not the correct extension for signing that content type, e.g. Vaccination entries
@@ -165,41 +309,26 @@ The resulting `error` may be one of the following (the list is identical to Vali
  - `KEYSTORE_ERROR`: not used
  - `SIGNATURE_INVALID`: Signature on COSE structure could not be verified
 
-
-Encoding of HCERT data, i.e. generating the input for an QR Code, as well as the QR Code picture:
-```JavaScript
-let generator = new hcert.GeneratorEcRandom(256); // creates a new EC key
-let input = JSON.stringify({"ver": "1.2.1", "nam": { ... }}); // valid HCERT data
-
-let result = generator.encode(input); // get a result with all intermediate steps
-
-let qrCode = generator.encodeToQrCode(input, 4, 2); // 4 is the module size of the QR code, 2 is the margin size
-// get a data URL of the encoded QR code picture, e.g. "data:image/gif;base64,AAA..."
-
-console.info(result.step5Prefixed); // the contents of the QR code
+On JavaScript, the methods `updateTrustList` and `VerifierTrustList` may throw an error of the type `VerificationException` directly. The object has the following structure:
+```JSON
+{
+  "message_8yp7un$_0": "Hash not matching",
+  "cause_th0jdv$_0": null,
+  "stack": "n/</e.captureStack@file:///...",
+  "name": "VerificationException",
+  "error": {
+    "name$": "TRUST_LIST_SIGNATURE_INVALID",
+    "ordinal$": 14
+  }
+}
 ```
 
-You may also load a fixed key pair with certificate:
-```JavaScript
-let pemKey = "-----BEGIN PRIVATE KEY-----\nME0CAQAwE..."; // PEM encoded private key info, i.e. PKCS#8
-let pemCert = "-----BEGIN CERTIFICATE-----\nMIICsjCCAZq..."; // PEM encoded signer certificate
-let generator = new hcert.GeneratorFixed(pemKey, pemCert); // creates a new EC key
-let input = JSON.stringify({"ver": "1.2.1", "nam": { ... }}); // valid HCERT data
-
-let result = generator.encode(input); // get a result with all intermediate steps
-
-let qrCode = generator.encodeToQrCode(input, 4, 2); // 4 is the module size of the QR code, 2 is the margin size
-// get a data URL of the encoded QR code picture, e.g. "data:image/gif;base64,AAA..."
-
-console.info(result.step5Prefixed); // the contents of the QR code
-```
+The important bits are `name` (which should always be `VerificationException`) and `error.name$`, which contains the error code from the list above, e.g. `TRUST_LIST_SIGNATURE_INVALID`. See also <demo.html>.
 
 
 ## TrustList
 
-There is also an option to create (on the service) and read (in the app) a list of trusted certificates for verification of HCERTs.
-
-The server can create it:
+There is also an option to create (e.g. on a web service) a list of trusted certificates for verification of HCERTs:
 ```Java
 // Load the private key and certificate from somewhere ...
 String privateKeyPem = "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADAN...";
@@ -209,40 +338,32 @@ TrustListV2EncodeService trustListService = new TrustListV2EncodeService(cryptoS
 
 // Load the list of trusted certificates from somewhere ...
 Set<X509Certificate> trustedCerts = new HashSet<>(cert1, cert2, ...);
-byte[] encodedTrustList = trustListService.encodeContent(trustedCerts);
-byte[] encodedTrustListSignature = trustListService.encodeSignature(encodedTrustList);
-```
-
-The client can use it for verification:
-```Java
-String trustListAnchor = "-----BEGIN CERTIFICATE-----\nMIICsjCCAZq...";
-CertificateRepository trustAnchor = new PrefilledCertificateRepository(trustListAnchor);
-byte[] encodedTrustList = // file download etc
-byte[] encodedTrustListSignature = // file download etc
-CertificateRepository repository = new TrustListCertificateRepository(encodedTrustListSignature, encodedTrustList, trustAnchor);
-Chain chain = DefaultChain.buildVerificationChain(repository);
-
-// Continue as in the example above ...
+byte[] trustListContent = trustListService.encodeContent(trustedCerts);
+byte[] trustListSignature = trustListService.encodeSignature(trustListContent);
 ```
 
 ## Data Classes
-
-Sample data objects are provided in `SampleData`, with special thanks to Christian Baumann.
 
 Classes in `ehn.techiop.hcert.kotlin.data` provide Kotlin data classes that conform to the JSON schema. They can be de-/serialized with [Kotlin Serialization](https://github.com/Kotlin/kotlinx.serialization), i.e. `Cbor.encodeToByteArray()` or `Cbor.decodeFromByteArray<GreenCertificate>()`.
 
 These classes also use `ValueSetEntry` objects, that are loaded from the valuesets of the dgc-schema. These provide additional information, e.g. for the key "EU/1/20/1528" to map to the vaccine "Comirnaty".
 
+This implementation is on purpose lenient when parsing HCERT data, since there may be some production data out there, that includes timestamps in date objects, or whitespaces in keys for value sets.
+
+For JS, you can call `verifyDataClass(qr)` (istead of `verify(qr)`) to get an instance of a monkey-patched `GreenCertificate`. This class is essentially the same as `GreenCertificate` for the JVM target, but holds JS `Date` objects instead of the JVM types for dates and instants. In contrast to the simple call to `verify(qr)`, you'll get a `valueSetEntry` (if one is found) and descriptive property names.
+
 ## Configuration
 
 Nearly every object in this library can be configured using constructor parameters. Most of these parameters have opinionated, default values, e.g. `Clock.System` for `clock`, used to get the current timestamp.
+
+With the default configuration, schema validation of HCERT data is done against a very relaxed JSON schema, e.g. no `maxLength`, no `format`, no `pattern` for all fields. This is done to work around several faulty implementations of some countries, whose HCERT data would not be accepted by verifiers otherwise.
 
 One example: The validity for the TrustList, as well as the validity of the HCERT in CBOR can be passed as a `validity` parameter (instance of a `Duration`) when constructing the objects:
 
 ```Java
 CryptoService cryptoService = new RandomEcKeyCryptoService(256); // or some fixed key crypto service
 HigherOrderValidationService higherOrdeValidationService = new DefaultHigherOrderValidationService();
-SchemaValidationService schemaValidationService = new DefaultSchemaValidationService();
+SchemaValidationService schemaValidationService = new DefaultSchemaValidationService(); // pass "false" to disable fallback schema validation
 CborService cborService = new DefaultCborService();
 CwtService cwtService = new DefaultCwtService("AT", Duration.hours(24)); // validity for HCERT content
 CoseService coseService = new DefaultCoseService(cryptoService);
@@ -251,17 +372,32 @@ Base45Service base45Service = new DefaultBase45Service();
 ContextIdentifierService contextIdentifierService = new DefaultContextIdentifierService("HC1:");
 
 
-Chain chain = new Chain(higherOrdeValidationService, schemaValidationService, cborService, cwtService, coseService, compressorService, base45Service, contextIdentifierService);
+Chain chain = new Chain(higherOrderValidationService, schemaValidationService, cborService, cwtService, coseService, compressorService, base45Service, contextIdentifierService);
 ChainResult result = chain.encode(input);
 ```
 
 Implementers may load values for constructor parameters from a configuration file, e.g. with [Spring Boot's configuration properties](https://docs.spring.io/spring-boot/docs/current/reference/html/spring-boot-features.html#boot-features-external-config).
 
+## Logging
+Configurability also holds true for logging, which is based on [Napier](https://github.com/AAkira/Napier) and is shipped with a JS+JVM basic debug logger (see [Enabling logging](src/commonTest/kotlin/ehn/techiop/hcert/kotlin/000InitTestContext.kt)).
+This should probably be configured differently in production.
+
+As for JS logging, the following functions are available:
+- `hcert.setLogLevel(level)`, where `level` is one of the following string values: VERBOSE, DEBUG, INFO, WARNING, ERROR, ASSERT<br>
+Setting any other value (or `null`/`undefined`) will disable logging, although it will not *remove* any loggers (see below). By default, a basic console logger is present. Therefore, a call to `setLogLevel` suffices to enable console-based logging.
+  The  default logger is exposed as `hcert.defaultLogger`.
+- `hcert.setLogger(loggingFunction: (level: String, tag: String?, stackTrace: String?, message: String?) -> Unit,
+  keep: Boolean? = false): JsLogger`, which allows for configuring custom logging callbacks.<br>If `keep` is omitted, existing loggers will be replaced, otherwise the newly added logger will be invoked *in addition* to existing loggers. As such, a call to this function without setting `keep=true` will result in the default  console logger to be replaced.<br>
+   This function returns the newly created logger instance, which allows for later removal of any added logging callback (see below).
+- `hcert.addLogger(logger:Antilog)`/`hcert.removeLogger(logger:Antilog)` functions enable adding/removing any logger created through `setLogger()`, as well as the default console logger exposed though `hcert.defaultLogger`.
+It is therefore sensible to store the return value of `setLogger` to cater tor complex logging setups.
+
+
+On other platforms, Napier's respective default (or custom) platform-specific loggers should be used according to the Napier API.
+
 ## Publishing
 
-To publish this package to GitHub, create a personal access token (read <https://docs.github.com/en/packages/guides/configuring-gradle-for-use-with-github-packages>), and add `gpr.user` and `gpr.key` in your `~/.gradle/gradle.properties` and run `./gradlew publish`
-
-The library is also published on jitpack.io: [![](https://jitpack.io/v/ehn-dcc-development/hcert-kotlin.svg)](https://jitpack.io/#ehn-dcc-development/hcert-kotlin).
+The library is also published on [jitpack.io](https://jitpack.io/#ehn-dcc-development/hcert-kotlin).
 
 Use it in your project like this:
 
@@ -271,14 +407,35 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.github.ehn-dcc-development:hcert-kotlin:1.0.2-SNAPSHOT'
-    implementation 'com.github.ehn-dcc-development:hcert-kotlin-jvm:1.0.2-SNAPSHOT'
+    implementation 'com.github.ehn-dcc-development:hcert-kotlin:1.3.0-SNAPSHOT'
+    implementation 'com.github.ehn-dcc-development:hcert-kotlin-jvm:1.3.0-SNAPSHOT'
 }
 ```
 
 If you are planning to use this library, we'll suggest to fork it (internally), and review incoming changes. We can not guarantee non-breaking changes between releases.
 
 ## Changelog
+
+Version 1.3.0:
+ - tbd
+
+Version 1.2.0:
+ - Split faulty implementations, sample data, to separate artifact: `ehn.techiop.hcert:hcert-kotlin-jvmdatagen`
+ - Add option to get a data class with "nice" names when validating in JS (equivalent to JVM)
+ - API change: GreenCertificate now uses arrays for test/vaccination/recovery
+ - Add `certificateSubjectCountry` to `VerificationResult`, to get the country of the HCERT's signature certificate
+ - Relax schema validation once more to allow explicit `null` values for `nm`, `ma` in HCERT Test entries
+ - JS: Fix logging API (previous implementation was incomplete, preventing any logging on JS)
+
+Version 1.1.1:
+ - Change `tc` (`testingFacility`) in HCERT Test entries to optional, i.e. nullable String
+
+Version 1.1.0:
+ - Try to parse as many dates and datetimes as possible
+ - Perform a very relaxed schema validation by default
+ - Add errors for trust list loading
+ - Support lower Android targets by not using `java.util.Base64`
+ - Publish library on jitpack.io
 
 Version 1.0.1:
  - Validate schema on JVM
@@ -319,6 +476,7 @@ This library uses the following dependencies:
  - [Kotlin](https://github.com/JetBrains/kotlin), under the Apache-2.0 License
  - [Kotlinx Serialization](https://github.com/Kotlin/kotlinx.serialization), under the Apache-2.0 License
  - [Kotlinx Datetime](https://github.com/Kotlin/kotlinx-datetime), under the Apache-2.0 License
+ - [Napier](https://github.com/AAkira/Napier), under the Apache-2.0 License
  - [Kotest](https://github.com/kotest/kotest), under the Apache-2.0 License
 
 For the JVM target:

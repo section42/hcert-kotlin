@@ -2,14 +2,14 @@ package ehn.techiop.hcert.kotlin.trust
 
 import ehn.techiop.hcert.kotlin.chain.NullableTryCatch.catch
 import ehn.techiop.hcert.kotlin.chain.NullableTryCatch.jsTry
-import ehn.techiop.hcert.kotlin.chain.toBuffer
+import ehn.techiop.hcert.kotlin.chain.impl.CborHelper
 import ehn.techiop.hcert.kotlin.chain.toByteArray
 import ehn.techiop.hcert.kotlin.data.CborObject
 import org.khronos.webgl.Uint8Array
 
 actual object CwtHelper {
     actual fun fromCbor(input: ByteArray): CwtAdapter =
-        JsCwtAdapter(Cbor.Decoder.decodeAllSync(input.toBuffer())[0].asDynamic())
+        JsCwtAdapter(CborHelper.decodeFirst(input))
 }
 
 @Suppress("UNCHECKED_CAST_TO_EXTERNAL_INTERFACE")
@@ -18,14 +18,11 @@ class JsCwtAdapter(private val map: dynamic) : CwtAdapter {
     override fun getByteArray(key: Int): ByteArray? =
         jsTry { (map.get(key) as Uint8Array?)?.toByteArray() }.catch { null }
 
-
     override fun getString(key: Int): String? =
         jsTry { map.get(key) as String? }.catch { null }
 
-
     override fun getNumber(key: Int): Number? =
         jsTry { map.get(key) as Number? }.catch { null }
-
 
     override fun getMap(key: Int): CwtAdapter? =
         jsTry {

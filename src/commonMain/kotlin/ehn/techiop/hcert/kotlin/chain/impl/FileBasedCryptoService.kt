@@ -1,6 +1,8 @@
 package ehn.techiop.hcert.kotlin.chain.impl
 
-import ehn.techiop.hcert.kotlin.chain.CryptoService
+import ehn.techiop.hcert.kotlin.crypto.CryptoAdapter
 
-expect class FileBasedCryptoService constructor(pemEncodedPrivateKey: String, pemEncodedCertificate: String) :
-    CryptoService
+class FileBasedCryptoService(
+    pemEncodedPrivateKey: String,
+    pemEncodedCertificate: String
+) : DefaultCryptoService(CryptoAdapter(pemEncodedPrivateKey, pemEncodedCertificate))

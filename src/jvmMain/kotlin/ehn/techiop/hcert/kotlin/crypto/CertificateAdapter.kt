@@ -15,7 +15,7 @@ actual class CertificateAdapter(val certificate: X509Certificate) {
             pemEncoded
                 .replace("-----BEGIN CERTIFICATE-----", "")
                 .replace("-----END CERTIFICATE-----", "")
-                .replace("\n", "")
+                .lines().joinToString(separator = "")
                 .fromBase64().inputStream()
         ) as X509Certificate
     )
@@ -39,6 +39,8 @@ actual class CertificateAdapter(val certificate: X509Certificate) {
     actual val validFrom = Instant.fromEpochMilliseconds(certificate.notBefore.time)
 
     actual val validUntil = Instant.fromEpochMilliseconds(certificate.notAfter.time)
+
+    actual val subjectCountry = Regex("C=[^,]*").find(certificate.subjectX500Principal.name)?.value
 
     actual val publicKey: PubKey = JvmPubKey(certificate.publicKey)
 
