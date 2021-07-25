@@ -9,6 +9,8 @@ enum class CoseHeaderKeys(val intVal: Int, val stringVal: String) {
     IV(5, "IV"),
     PARTIAL_IV(6, "Partial IV"),
     TRUSTLIST_VERSION(42, "tlv"),
+    BUSINESS_RULES_VERSION(-65537, "brv"),
+    VALUE_SET_VERSION(-65538, "vsv"),
 }
 
 enum class CwtHeaderKeys(val intVal: Int, val stringVal: String) {
