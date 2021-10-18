@@ -296,6 +296,7 @@ The field `error` in the resulting structure (`DecodeResult`) may contain the er
  - `CBOR_DESERIALIZATION_FAILED`: Error in decoding CBOR or CWT structures
  - `SCHEMA_VALIDATION_FAILED`: Data does not conform to schema (on iOS, this is a `CBOR_DESERIALIZATION_FAILED`)
  - `CWT_EXPIRED`: Timestamps in CWT are not correct, e.g. expired before issuing timestamp
+ - `CWT_NOT_YET_VALID`: Timestamps in CWT are not correct, e.g. issued after the current time
  - `QR_CODE_ERROR`: not used
  - `CERTIFICATE_QUERY_FAILED`: not used
  - `USER_CANCELLED`: not used
@@ -305,6 +306,7 @@ The field `error` in the resulting structure (`DecodeResult`) may contain the er
  - `TRUST_LIST_SIGNATURE_INVALID`: Signature on Trust List (or Business Rules) is not valid
  - `KEY_NOT_IN_TRUST_LIST`: Certificate with `KID` not found
  - `PUBLIC_KEY_EXPIRED`: Certificate used to sign the COSE structure has expired
+ - `PUBLIC_KEY_NOT_YET_VALID`: Certificate used to sign the COSE structure is not yet valid
  - `UNSUITABLE_PUBLIC_KEY_TYPE`: Certificate has not the correct extension for signing that content type, e.g. Vaccination entries
  - `KEY_CREATION_ERROR`: not used
  - `KEYSTORE_ERROR`: not used
@@ -576,7 +578,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.github.ehn-dcc-development.hcert-kotlin:hcert-kotlin-jvm:1.3.0'
+    implementation 'com.github.ehn-dcc-development.hcert-kotlin:hcert-kotlin-jvm:1.3.2'
 }
 ```
 
@@ -615,6 +617,13 @@ See these links for details:
  - [Android documentation](https://developer.android.com/studio/write/java8-support#library-desugaring)
 
 ## Changelog
+
+Version 1.3.2:
+ - Export `SignedDataDownloader` to JS
+
+Version 1.3.1:
+ - Rework verification of timestamps in the HCERT CWT, to work around some weird codes appearing in production
+ - New error codes `CWT_NOT_YET_VALID` and `PUBLIC_KEY_NOT_YET_VALID`, see above
 
 Version 1.3.0:
  - Parse a missing `dr` value in HCERT Test entries correctly
