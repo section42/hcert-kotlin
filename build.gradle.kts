@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "ehn.techiop.hcert"
-version = "1.3.0"
+version = "1.4.0-SNAPSHOT"
 
 java.sourceCompatibility = JavaVersion.VERSION_1_8
 
@@ -24,7 +24,6 @@ licenseReport {
 
 repositories {
     mavenLocal()
-    jcenter()
     mavenCentral()
 }
 
@@ -121,7 +120,7 @@ kotlin {
                 api("org.jetbrains.kotlinx:kotlinx-datetime:${Versions.datetime}")
                 api("org.jetbrains.kotlinx:kotlinx-serialization-json:${Versions.serialization}")
                 api("org.jetbrains.kotlinx:kotlinx-serialization-cbor:${Versions.serialization}")
-                api("io.github.aakira:napier:${Versions.logging}")
+                api("io.github.aakira:napier:${Versions.napier}")
             }
         }
         val commonTest by getting {
@@ -159,14 +158,15 @@ kotlin {
             dependencies {
                 implementation(npm("pako", Versions.js.pako))
                 implementation(npm("pkijs", Versions.js.pkijs))
-                implementation(npm("cose-js", File("${projectDir.absolutePath}/cose-js"), generateExternals = false))
+                implementation(npm("cose-js", Versions.js.cose, generateExternals = false))
                 implementation(npm("crypto-browserify", Versions.js.`crypto-browserify`))
                 implementation(npm("stream-browserify", Versions.js.`stream-browserify`))
                 implementation(npm("util", Versions.js.util))
                 implementation(npm("buffer", Versions.js.buffer))
                 implementation(npm("process", Versions.js.process))
                 implementation(npm("cbor", Versions.js.cbor))
-                implementation(npm("node-inspect-extracted", Versions.js.`node-inspect-extract`))
+                implementation(npm("node-inspect-extracted", Versions.js.`node-inspect-extracted`))
+                implementation(npm("bignumber.js", Versions.js.bignumber))
                 implementation(npm("fast-sha256", Versions.js.sha256, generateExternals = true))
                 implementation(npm("url", Versions.js.url))
                 implementation(npm("elliptic", Versions.js.elliptic))

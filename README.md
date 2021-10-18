@@ -42,14 +42,14 @@ Chain chain = DefaultChain.buildCreationChain(cryptoService);
 
 // Load the input data from somewhere ...
 String json = "{ \"sub\": { \"gn\": \"Gabriele\", ...";
-String input = Json.decodeFromString<GreenCertificate>(json);
+GreenCertificate input = Json.Default.decodeFromString(GreenCertificate.Companion.serializer(), json);
 
 // Apply all encoding steps from the Chain
 ChainResult result = chain.encode(input);
 
 // Optionally encode it as a QR-Code with 350 pixel in width and height
 TwoDimCodeService qrCodeService = new DefaultTwoDimCodeService(350);
-String encodedImage = qrCodeService.encode(result.step5Prefixed);
+byte[] encodedImage = qrCodeService.encode(result.getStep5Prefixed());
 String encodedBase64QrCode = Base64.getEncoder().encodeToString(encodedImage);
 
 // Then include in an HTML page or something ...
@@ -69,7 +69,7 @@ String input = "HC1:NCFC:MVIMAP2SQ20MU...";
 
 DecodeResult result = chain.decode(input);
 // Read metaInformation like expirationTime, issuedAt, issuer
-VerificationResult verificationResult = result.getVerificationResult()
+VerificationResult verificationResult = result.getVerificationResult();
 boolean isValid = verificationResult.getError() == null;
 // See list below for possible Errors, may be null
 Error error = verificationResult.getError();
@@ -296,6 +296,7 @@ The field `error` in the resulting structure (`DecodeResult`) may contain the er
  - `CBOR_DESERIALIZATION_FAILED`: Error in decoding CBOR or CWT structures
  - `SCHEMA_VALIDATION_FAILED`: Data does not conform to schema (on iOS, this is a `CBOR_DESERIALIZATION_FAILED`)
  - `CWT_EXPIRED`: Timestamps in CWT are not correct, e.g. expired before issuing timestamp
+ - `CWT_NOT_YET_VALID`: Timestamps in CWT are not correct, e.g. issued after the current time
  - `QR_CODE_ERROR`: not used
  - `CERTIFICATE_QUERY_FAILED`: not used
  - `USER_CANCELLED`: not used
@@ -305,6 +306,7 @@ The field `error` in the resulting structure (`DecodeResult`) may contain the er
  - `TRUST_LIST_SIGNATURE_INVALID`: Signature on Trust List (or Business Rules) is not valid
  - `KEY_NOT_IN_TRUST_LIST`: Certificate with `KID` not found
  - `PUBLIC_KEY_EXPIRED`: Certificate used to sign the COSE structure has expired
+ - `PUBLIC_KEY_NOT_YET_VALID`: Certificate used to sign the COSE structure is not yet valid
  - `UNSUITABLE_PUBLIC_KEY_TYPE`: Certificate has not the correct extension for signing that content type, e.g. Vaccination entries
  - `KEY_CREATION_ERROR`: not used
  - `KEYSTORE_ERROR`: not used
@@ -335,11 +337,11 @@ There is also an option to create (e.g. on a web service) a list of trusted cert
 String privateKeyPem = "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADAN...";
 String certificatePem = "-----BEGIN CERTIFICATE-----\nMIICsjCCAZq...";
 CryptoService cryptoService = new FileBasedCryptoService(privateKeyPem, certificatePem);
-Duration validity = Duration.hours(48);
-TrustListV2EncodeService trustListService = new TrustListV2EncodeService(cryptoService, validity);
+int validityHours = 48;
+TrustListV2EncodeService trustListService = new TrustListV2EncodeService(cryptoService, validityHours);
 
 // Load the list of trusted certificates from somewhere ...
-Set<X509Certificate> trustedCerts = new HashSet<>(cert1, cert2, ...);
+Set<CertificateAdapter> trustedCerts = new HashSet<>(cert1, cert2, ...);
 SignedData trustList = trustListService.encode(trustedCerts);
 // Write content file
 new FileOutputStream(new File("trustlist.bin")).write(trustList.getContent());
@@ -366,7 +368,7 @@ SignedDataParsed parsed = result.getFirst();
 TrustListV2 trustListContainer = result.getSecond();
 for (TrustedCertificateV2 cert : trustListContainer.getCertificates()) {
     // Parse it into your own data class
-    System.out.println(cert.getCertificate().asBase64();
+    System.out.println(ExtensionsKt.asBase64(cert.getCertificate()));
 }
 ```
 
@@ -396,12 +398,12 @@ There is also an option to create (e.g. on a web service) a list of business rul
 String privateKeyPem = "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADAN...";
 String certificatePem = "-----BEGIN CERTIFICATE-----\nMIICsjCCAZq...";
 CryptoService cryptoService = new FileBasedCryptoService(privateKeyPem, certificatePem);
-Duration validity = Duration.hours(48);
-BusinessRulesV1EncodeService rulesService = new BusinessRulesV1EncodeService(cryptoService, validity);
+int validityHours = 48;
+BusinessRulesV1EncodeService rulesService = new BusinessRulesV1EncodeService(cryptoService, validityHours);
 
 // Load the list business rules
 List<String> inputStrings = new ArrayList<>();
-List<BusinessRule> input = inputStrings.stream().map(it -> new BusinessRule(it)).collect(Collectors.toList());
+List<BusinessRule> input = inputStrings.stream().map(it -> new BusinessRule("identifier", it)).collect(Collectors.toList());
 SignedData rules = rulesService.encode(input);
 // Write content file
 new FileOutputStream(new File("rules.bin")).write(rules.getContent());
@@ -418,10 +420,10 @@ CertificateRepository trustAnchor = new PrefilledCertificateRepository("-----BEG
 byte[] rulesContent = new byte[0];
 // Download rules signature, binary, e.g. from https://dgc.a-sit.at/ehn/rules/v1/sig
 byte[] rulesSignature = new byte[0];
-SignedData rules = new SignedData(rulesContent, rulesSignature);
+SignedData rulesSigned = new SignedData(rulesContent, rulesSignature);
 
-BusinessRulesDecodeService service = new BusinessRuleBusinessRulesDecodeService(trustAnchor);
-Pair<SignedDataParsed, BusinessRulesContainer> result = service.decode(rules);
+BusinessRulesDecodeService service = new BusinessRulesDecodeService(trustAnchor);
+Pair<SignedDataParsed, BusinessRulesContainer> result = service.decode(rulesSigned);
 // Contains "validFrom", "validUntil"
 SignedDataParsed parsed = result.getFirst();
 // Contains a list of business rules as raw JSON
@@ -458,8 +460,8 @@ There is also an option to create (e.g. on a web service) a list of value sets, 
 String privateKeyPem = "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADAN...";
 String certificatePem = "-----BEGIN CERTIFICATE-----\nMIICsjCCAZq...";
 CryptoService cryptoService = new FileBasedCryptoService(privateKeyPem, certificatePem);
-Duration validity = Duration.hours(48);
-ValueSetV1EncodeService valueSetService = new ValueSetV1EncodeService(cryptoService, validity);
+        int validityHours = 48;
+ValueSetV1EncodeService valueSetService = new ValueSetV1EncodeService(cryptoService, validityHours);
 
 // Load the list value sets
 List<String> inputStrings = new ArrayList<>();
@@ -480,15 +482,15 @@ CertificateRepository trustAnchor = new PrefilledCertificateRepository("-----BEG
 byte[] valueSetContent = new byte[0];
 // Download valueSet signature, binary, e.g. from https://dgc.a-sit.at/ehn/values/v1/sig
 byte[] valueSetSignature = new byte[0];
-SignedData valueSet = new SignedData(valueSetContent, valueSetSignature);
+SignedData valueSetSigned = new SignedData(valueSetContent, valueSetSignature);
 
 ValueSetDecodeService service = new ValueSetDecodeService(trustAnchor);
-Pair<SignedDataParsed, ValueSetContainer> result = service.decode(valueSet);
+Pair<SignedDataParsed, ValueSetContainer> result = service.decode(valueSetSigned);
 // Contains "validFrom", "validUntil"
 SignedDataParsed parsed = result.getFirst();
 // Contains a list of value sets as raw JSON
 ValueSetContainer valueSet = result.getSecond();
-for (ValueSet vs : valueSet.getValueSet()) {
+for (ValueSet vs : valueSet.getValueSets()) {
     // Parse it into your own data class
     System.out.println(vs.getValueSet());
 }
@@ -531,10 +533,10 @@ One example: The validity for the TrustList, as well as the validity of the HCER
 
 ```Java
 CryptoService cryptoService = new RandomEcKeyCryptoService(256); // or some fixed key crypto service
-HigherOrderValidationService higherOrdeValidationService = new DefaultHigherOrderValidationService();
+HigherOrderValidationService higherOrderValidationService = new DefaultHigherOrderValidationService();
 SchemaValidationService schemaValidationService = new DefaultSchemaValidationService(); // pass "false" to disable fallback schema validation
 CborService cborService = new DefaultCborService();
-CwtService cwtService = new DefaultCwtService("AT", Duration.hours(24)); // validity for HCERT content
+CwtService cwtService = new DefaultCwtService("AT", 24); // validity for HCERT content
 CoseService coseService = new DefaultCoseService(cryptoService);
 CompressorService compressorService = new DefaultCompressorService(9); // level of compression
 Base45Service base45Service = new DefaultBase45Service();
@@ -576,7 +578,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.github.ehn-dcc-development.hcert-kotlin:hcert-kotlin-jvm:1.3.0'
+    implementation 'com.github.ehn-dcc-development.hcert-kotlin:hcert-kotlin-jvm:master-SNAPSHOT'
 }
 ```
 
@@ -615,6 +617,35 @@ See these links for details:
  - [Android documentation](https://developer.android.com/studio/write/java8-support#library-desugaring)
 
 ## Changelog
+
+Version NEXT:
+ - Fix constructors and overloads fro Java callers
+ - Update dependencies:
+   - Common:
+     - Kotlin: 1.5.31
+     - kotlinx.serialization: 1.3.0
+     - kotlinx.datetime: 0.3.0
+     - Kotest: 4.6.3
+     - Napier (Logging): 2.1.0
+   - JVM:
+     - Bouncy Castle PKIX: 1.69
+     - Json Schema Validation Lib: 2.1.0
+   - JS:
+     - pako (ZLib): 2.0.4
+     - pkijs: 2.1.97
+     - util: 0.12.4
+     - cbor: 8.0.2
+     - node-inspect-extracted: 1.0.8
+     - ajv (JSON schema validator): 8.6.3
+     - ajv-formats: 2.1.1
+ - JS: Switch to upstream cose-js 0.7.0 (deprecates forked version)
+
+Version 1.3.2:
+ - Export `SignedDataDownloader` to JS
+
+Version 1.3.1:
+ - Rework verification of timestamps in the HCERT CWT, to work around some weird codes appearing in production
+ - New error codes `CWT_NOT_YET_VALID` and `PUBLIC_KEY_NOT_YET_VALID`, see above
 
 Version 1.3.0:
  - Parse a missing `dr` value in HCERT Test entries correctly

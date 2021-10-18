@@ -7,23 +7,28 @@ import ehn.techiop.hcert.kotlin.crypto.CoseHeaderKeys
 import ehn.techiop.hcert.kotlin.crypto.CwtHeaderKeys
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
+import kotlin.jvm.JvmOverloads
 import kotlin.time.Duration
 
 
 /**
  * Decodes a [SignedData] structure, and verify the validity of it
  */
-class SignedDataDecodeService constructor(
+class SignedDataDecodeService @JvmOverloads constructor(
     private val repository: CertificateRepository,
     private val clock: Clock = Clock.System,
-    private val clockSkew: Duration = Duration.seconds(300)
+    private val clockSkewSeconds: Int = 300
 ) {
 
     @Throws(VerificationException::class)
     fun decode(input: SignedData, headersToParse: List<CoseHeaderKeys> = listOf()): SignedDataParsed {
         val cose = CoseAdapter(input.signature)
         val kid = cose.getProtectedAttributeByteArray(CoseHeaderKeys.KID.intVal)
-            ?: throw VerificationException(Error.TRUST_LIST_SIGNATURE_INVALID, "KID not defined")
+            ?: throw VerificationException(
+                Error.TRUST_LIST_SIGNATURE_INVALID,
+                "KID not defined",
+                details = mapOf("kid" to "null")
+            )
 
         val validated = cose.validate(kid, repository)
         if (!validated)
@@ -38,18 +43,32 @@ class SignedDataDecodeService constructor(
             throw VerificationException(Error.TRUST_LIST_SIGNATURE_INVALID, "Hash not matching")
 
         val notBefore = map.getNumber(CwtHeaderKeys.NOT_BEFORE.intVal)
-            ?: throw VerificationException(Error.TRUST_LIST_NOT_YET_VALID, "NotBefore=null")
+            ?: throw VerificationException(
+                Error.TRUST_LIST_NOT_YET_VALID,
+                "NotBefore=null",
+                details = mapOf("validFrom" to "null")
+            )
 
         val validFrom = Instant.fromEpochSeconds(notBefore.toLong())
-        if (validFrom > clock.now().plus(clockSkew))
-            throw VerificationException(Error.TRUST_LIST_NOT_YET_VALID, "NotBefore>clock.now()")
+        if (validFrom > clock.now().plus(Duration.seconds(clockSkewSeconds)))
+            throw VerificationException(
+                Error.TRUST_LIST_NOT_YET_VALID,
+                "NotBefore>clock.now()",
+                details = mapOf("validFrom" to validFrom.toString(), "currentTime" to clock.now().toString())
+            )
 
         val expiration = map.getNumber(CwtHeaderKeys.EXPIRATION.intVal)
-            ?: throw VerificationException(Error.TRUST_LIST_EXPIRED, "Expiration=null")
+            ?: throw VerificationException(
+                Error.TRUST_LIST_EXPIRED, "Expiration=null",
+                details = mapOf("expirationTime" to "null")
+            )
 
         val validUntil = Instant.fromEpochSeconds(expiration.toLong())
-        if (validUntil < clock.now().minus(clockSkew))
-            throw VerificationException(Error.TRUST_LIST_EXPIRED, "Expiration<clock.now()")
+        if (validUntil < clock.now().minus(Duration.seconds(clockSkewSeconds)))
+            throw VerificationException(
+                Error.TRUST_LIST_EXPIRED, "Expiration<clock.now()",
+                details = mapOf("expirationTime" to validUntil.toString(), "currentTime" to clock.now().toString())
+            )
 
         return SignedDataParsed(validFrom, validUntil, input.content, headers)
     }

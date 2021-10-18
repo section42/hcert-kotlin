@@ -7,6 +7,7 @@ import ehn.techiop.hcert.kotlin.crypto.CoseHeaderKeys
 import kotlinx.datetime.Clock
 import kotlinx.serialization.cbor.Cbor
 import kotlinx.serialization.decodeFromByteArray
+import kotlin.jvm.JvmOverloads
 import kotlin.time.Duration
 
 /**
@@ -14,15 +15,15 @@ import kotlin.time.Duration
  *
  * - [repository] contains the trust anchor for the parsed file
  * - [clock] defines the current time to use for validity checks
- * - [clockSkew] defines the error margin when comparing time validity of the parsed file
+ * - [clockSkewSeconds] defines the error margin when comparing time validity of the parsed file in seconds
  */
-class TrustListDecodeService(
+class TrustListDecodeService @JvmOverloads constructor(
     repository: CertificateRepository,
     clock: Clock = Clock.System,
-    clockSkew: Duration = Duration.seconds(300)
+    clockSkewSeconds: Int = 300
 ) {
 
-    private val decodeService = SignedDataDecodeService(repository, clock, clockSkew)
+    private val decodeService = SignedDataDecodeService(repository, clock, clockSkewSeconds)
 
     /**
      * See [SignedData] for details about the content
@@ -31,10 +32,16 @@ class TrustListDecodeService(
     @Throws(VerificationException::class)
     fun decode(input: SignedData): Pair<SignedDataParsed, TrustListV2> {
         val parsed = decodeService.decode(input, listOf(CoseHeaderKeys.TRUSTLIST_VERSION))
-        when (parsed.headers[CoseHeaderKeys.TRUSTLIST_VERSION]) {
-            1 -> throw VerificationException(TRUST_SERVICE_ERROR, "Version 1")
+        when (val version = parsed.headers[CoseHeaderKeys.TRUSTLIST_VERSION]) {
+            1 -> throw VerificationException(
+                TRUST_SERVICE_ERROR, "Version 1",
+                details = mapOf("trustListVersion" to version.toString())
+            )
             2 -> return Pair(parsed, Cbor.decodeFromByteArray(parsed.content))
-            else -> throw VerificationException(TRUST_SERVICE_ERROR, "Version unknown")
+            else -> throw VerificationException(
+                TRUST_SERVICE_ERROR, "Version unknown",
+                details = mapOf("trustListVersion" to (version ?: "null").toString())
+            )
         }
     }
 

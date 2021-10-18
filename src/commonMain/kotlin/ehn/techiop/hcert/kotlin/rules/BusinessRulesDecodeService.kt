@@ -10,6 +10,7 @@ import ehn.techiop.hcert.kotlin.trust.SignedDataParsed
 import kotlinx.datetime.Clock
 import kotlinx.serialization.cbor.Cbor
 import kotlinx.serialization.decodeFromByteArray
+import kotlin.jvm.JvmOverloads
 import kotlin.time.Duration
 
 /**
@@ -17,15 +18,15 @@ import kotlin.time.Duration
  *
  * - [repository] contains the trust anchor for the parsed file
  * - [clock] defines the current time to use for validity checks
- * - [clockSkew] defines the error margin when comparing time validity of the parsed file
+ * - [clockSkewSeconds] defines the error margin when comparing time validity of the parsed file in seconds
  */
-class BusinessRulesDecodeService(
+class BusinessRulesDecodeService @JvmOverloads constructor(
     repository: CertificateRepository,
     clock: Clock = Clock.System,
-    clockSkew: Duration = Duration.seconds(300)
+    clockSkewSeconds: Int = 300
 ) {
 
-    private val decodeService = SignedDataDecodeService(repository, clock, clockSkew)
+    private val decodeService = SignedDataDecodeService(repository, clock, clockSkewSeconds)
 
     /**
      * See [SignedData] for details about the content
@@ -34,9 +35,13 @@ class BusinessRulesDecodeService(
     @Throws(VerificationException::class)
     fun decode(input: SignedData): Pair<SignedDataParsed, BusinessRulesContainer> {
         val parsed = decodeService.decode(input, listOf(CoseHeaderKeys.BUSINESS_RULES_VERSION))
-        when (parsed.headers[CoseHeaderKeys.BUSINESS_RULES_VERSION]) {
+        when (val version = parsed.headers[CoseHeaderKeys.BUSINESS_RULES_VERSION]) {
             1 -> return Pair(parsed, Cbor.decodeFromByteArray(parsed.content))
-            else -> throw VerificationException(TRUST_SERVICE_ERROR, "Version unknown")
+            else -> throw VerificationException(
+                TRUST_SERVICE_ERROR,
+                "Version unknown",
+                details = mapOf("businessRulesVersion" to (version ?: "null").toString())
+            )
         }
     }
 

@@ -10,6 +10,7 @@
 package cose
 
 import Buffer
+import kotlin.js.Json
 
 external interface CosePublicKey
 
@@ -58,7 +59,13 @@ external interface Signer {
     val key: CosePrivateKey
 }
 
-external open class sign {
+open external class common {
+    companion object {
+        val HeaderParameters: Json
+    }
+}
+
+open external class sign {
     companion object {
         fun verifySync(message: Buffer, verifier: Verifier): Buffer
         fun createSync(headers: dynamic, data: Buffer, signer: Signer): Buffer
